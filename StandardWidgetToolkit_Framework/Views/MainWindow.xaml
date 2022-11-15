@@ -1,0 +1,23 @@
+﻿<Window
+  x:Class="StandardWidgetToolkit_Framework.MainWindow"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+  xmlns:local="clr-namespace:StandardWidgetToolkit_Framework"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:viewmodels="clr-namespace:ViewModels"
+  Title="{Binding Path=Title, Mode=OneWay}"
+  Width="800"
+  Height="800"
+  d:DataContext="{d:DesignInstance Type=viewmodels:MainViewModel}"
+  Drop="Window_Drop"
+  Loaded="Window_Loaded"
+  WindowStartupLocation="CenterScreen"
+  mc:Ignorable="d">
+  <Grid>
+    <Frame
+      x:Name="fmNavigation"
+      Padding="8"
+      NavigationUIVisibility="Hidden" />
+  </Grid>
+</Window>
