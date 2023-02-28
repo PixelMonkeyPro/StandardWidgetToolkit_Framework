@@ -5,6 +5,10 @@ VisualStudioVersion = 16.0.32929.386
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StandardWidgetToolkit_Framework", "StandardWidgetToolkit_Framework\StandardWidgetToolkit_Framework.csproj", "{D8F79984-1F27-451F-B5B2-81EEF667DD31}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmbeddedApp", "EmbeddedApp\EmbeddedApp.csproj", "{49C9AF6E-BC88-4BF4-A1EC-2F094068D27C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeyMouseHook", "KeyMouseHook\KeyMouseHook.csproj", "{F872EBA8-CFC4-4ABD-8C45-7B5F091E794A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +19,14 @@ Global
 		{D8F79984-1F27-451F-B5B2-81EEF667DD31}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D8F79984-1F27-451F-B5B2-81EEF667DD31}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D8F79984-1F27-451F-B5B2-81EEF667DD31}.Release|Any CPU.Build.0 = Release|Any CPU
+		{49C9AF6E-BC88-4BF4-A1EC-2F094068D27C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{49C9AF6E-BC88-4BF4-A1EC-2F094068D27C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{49C9AF6E-BC88-4BF4-A1EC-2F094068D27C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{49C9AF6E-BC88-4BF4-A1EC-2F094068D27C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F872EBA8-CFC4-4ABD-8C45-7B5F091E794A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F872EBA8-CFC4-4ABD-8C45-7B5F091E794A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F872EBA8-CFC4-4ABD-8C45-7B5F091E794A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F872EBA8-CFC4-4ABD-8C45-7B5F091E794A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
