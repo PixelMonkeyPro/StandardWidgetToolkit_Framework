@@ -2,14 +2,12 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
+using System.Diagnostics;
 using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
+using System.IO;
 using System.Runtime.InteropServices;
-using Gma.System.MouseKeyHook;
-using Loamen.KeyMouseHook;
+using System.Text;
+using System.Windows.Forms;
 
 namespace EmbeddedApp
 {
@@ -20,77 +18,748 @@ namespace EmbeddedApp
         public FormMain()
         {
             InitializeComponent();
-
-            InitAppContainer();
-            //InitKeyMouseHook();
-            //Application.Idle += Application_Idle;
-        }
-
-        void Application_Idle(object sender, EventArgs e)
-        {
-            if (appContainer.IsStarted)
-            {
-                if (!appContainer.AppProcess.HasExited)
-                {
-
-                }
-            }
         }
 
         private void FormMain_Load(object sender, EventArgs e)
         {
-            //火祭
-            dgv_EventProcedure.Rows.Add(new object[] { "1", "WM_CLICK", "1000", "550", "200" });
-            dgv_EventProcedure.Rows.Add(new object[] { "1", "WM_CLICK", "515", "400", "200" });
-            dgv_EventProcedure.Rows.Add(new object[] { "1", "WM_CLICK", "900", "120", "200" });
-            //回收
-            dgv_EventProcedure.Rows.Add(new object[] { "1", "WM_CLICK", "1000", "215", "200" });
-            dgv_EventProcedure.Rows.Add(new object[] { "1", "WM_CLICK", "400", "515", "200" });
-            dgv_EventProcedure.Rows.Add(new object[] { "1", "WM_CLICK", "680", "480", "200" });
-            dgv_EventProcedure.Rows.Add(new object[] { "1", "WM_CLICK", "1000", "215", "200" });
-            //聚宝盆
-            dgv_EventProcedure.Rows.Add(new object[] { "1", "WM_CLICK", "220", "300", "200" });
-            dgv_EventProcedure.Rows.Add(new object[] { "1", "WM_CLICK", "690", "460", "200" });
+            InitializeNotifyIcon();
+
+            InitAppContainer();
+            InitEventProcedure();
+        }
+
+        private bool FormIsClosing = false;
+        private void FormMain_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (!exitTag)
+            {
+                e.Cancel = true;
+                WindowState = FormWindowState.Minimized;
+                HideForm();
+                ShowNotifyTip("请右击托盘图标退出");
+                return;
+            }
+
+            FormIsClosing = true;
+
+            HackMouseEvent();
+            UnRegisterGlobalHotKey();
+            CancelEmbedApplication();
+        }
+
+        private void FormMain_Deactivate(object sender, EventArgs e)
+        {
+            if (FormIsClosing) { return; }
+            if (WindowState == FormWindowState.Minimized) { HideForm(); }
+            if (checkBox_Nontransparent.Checked) { return; }
+            Opacity = 0;
+        }
+
+        /// <summary>
+        /// 注册全局热键
+        /// </summary>
+        private void RegisterGlobalHotKey()
+        {
+            RegisterHotKey(Handle, 998, KeyModifiers.Alt, Keys.CapsLock);
+            RegisterHotKey(Handle, 999, KeyModifiers.Alt, Keys.Oemtilde);
+            RegisterHotKey(Handle, 98, KeyModifiers.Control | KeyModifiers.Windows | KeyModifiers.Alt, Keys.Up);
+            RegisterHotKey(Handle, 99, KeyModifiers.Control | KeyModifiers.Windows | KeyModifiers.Alt, Keys.Down);
+        }
+
+        /// <summary>
+        /// 取消注册全局热键
+        /// </summary>
+        private void UnRegisterGlobalHotKey()
+        {
+            UnregisterHotKey(Handle, 998);
+            UnregisterHotKey(Handle, 999);
+            UnregisterHotKey(Handle, 98);
+            UnregisterHotKey(Handle, 99);
+        }
+
+        private void HackMouseEvent()
+        {
+            if (HackIsRuning)
+            {
+                HackIsRuning = false;
+                UnregisterHotKey(Handle, 100);
+                UnregisterHotKey(Handle, 101);
+                UnregisterHotKey(Handle, 102);
+                UnregisterHotKey(Handle, 103);
+                UnregisterHotKey(Handle, 104);
+            }
+            else
+            {
+                RegisterHotKey(Handle, 100, KeyModifiers.Alt, Keys.S);
+
+                RegisterHotKey(Handle, 101, KeyModifiers.Alt, Keys.A);
+                RegisterHotKey(Handle, 102, KeyModifiers.Alt, Keys.D);
+
+                RegisterHotKey(Handle, 103, KeyModifiers.Alt, Keys.Insert);
+                RegisterHotKey(Handle, 104, KeyModifiers.Alt, Keys.Delete);
+
+                HackIsRuning = true;
+                BackgroundWorker bw = new BackgroundWorker();
+                bw.DoWork += Bw_DoWork;
+                bw.ProgressChanged += Bw_ProgressChanged;
+                bw.WorkerReportsProgress = true;
+                bw.RunWorkerAsync();
+            }
+        }
+
+        private void HideForm()
+        {
+            Opacity = 0;
+            Hide();
+        }
+
+        private void ShowForm(double opacity, bool append = false)
+        {
+            Show();
+            if (append)
+            {
+                Opacity += opacity;
+                return;
+            }
+            Opacity = opacity;
+        }
+
+        private void TextBox_Opacity_TextChanged(object sender, EventArgs e)
+        {
+            if (double.TryParse(textBox_Opacity.Text, out double opacity))
+            {
+                Opacity = opacity > 1 ? opacity / 100 : opacity;
+            }
+        }
+        private void CheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            if (sender is CheckBox checkbox)
+            {
+                switch (checkbox.Name)
+                {
+                    case checkBox_Opacity.Name:
+                        if (!checkbox.Checked)
+                        {
+                            Opacity = 1;
+                            return;
+                        }
+
+                        if (double.TryParse(textBox_Opacity.Text, out double opacity))
+                        {
+                            Opacity = opacity > 1 ? opacity / 100 : opacity;
+                        }
+                        break;
+                    case checkBox_Nontransparent.Name:
+                        Opacity = 1;
+                        break;
+                    case checkBox_GlobalHotKey.Name:
+                        if (checkbox.Checked)
+                        {
+                            UnRegisterGlobalHotKey();
+                            return;
+                        }
+                        RegisterGlobalHotKey();
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
+        private void CheckBox_Opacity_CheckedChanged(object sender, EventArgs e)
+        {
+            if (!checkBox_Opacity.Checked)
+            {
+                Opacity = 1;
+                return;
+            }
+
+            if (double.TryParse(textBox_Opacity.Text, out double opacity))
+            {
+                Opacity = opacity > 1 ? opacity / 100 : opacity;
+            }
+        }
+
+        private void CheckBox_Nontransparent_CheckedChanged(object sender, EventArgs e)
+        {
+            Opacity = 1;
+        }
+
+        private void CheckBox_GlobalHotKey_CheckedChanged(object sender, EventArgs e)
+        {
+
+        }
+
+        private void Button_Click(object sender, EventArgs e)
+        {
+            if (sender is Button button)
+            {
+                button.Enabled = false;
+
+                object temp = button.Text;
+                button.Text = button.Tag.ToString();
+                button.Tag = temp;
+
+                switch (button.Name)
+                {
+                    case btnRecord.Name:
+                        HackMouseEvent();
+                        break;
+                    case btnPlayback.Name:
+                        PlayBackMouseEvent();
+                        break;
+                    default:
+                        break;
+                }
+
+                button.Enabled = true;
+            }
+        }
+
+        private void BtnRecord_Click(object sender, EventArgs e)
+        {
+            if (sender is Button button)
+            {
+                button.Enabled = false;
+
+                object temp = button.Text;
+                button.Text = button.Tag.ToString();
+                button.Tag = temp;
+
+                HackMouseEvent();
+
+                button.Enabled = true;
+            }
+        }
+
+        private void BtnPlayback_Click(object sender, EventArgs e)
+        {
+            if (sender is Button button)
+            {
+                button.Enabled = false;
+
+                dgv_EventProcedure.EndEdit();
+
+                if (checkBox_LoopPlay.Checked)
+                {
+                    object temp = button.Text;
+                    button.Text = button.Tag.ToString();
+                    button.Tag = temp;
+                }
+
+                PlayBackMouseEvent();
+
+                button.Enabled = true;
+            }
+        }
+
+        private void Dgv_EventProcedure_CellEndEdit(object sender, DataGridViewCellEventArgs e)
+        {
+            if (sender is DataGridView dataGridView)
+            {
+                DataGridViewCell cell = dataGridView[e.ColumnIndex, e.RowIndex];
+                if (cell.Value is null) { return; }
+                string columnDataPropertyName = dataGridView.Columns[e.ColumnIndex].DataPropertyName;
+                switch (columnDataPropertyName)
+                {
+                    case "WindowTitle":
+                        if (Dic_HWNDTitlePairs.TryGetValue(cell.Value.ToString(), out IntPtr hwnd))
+                        {
+                            dataGridView.Rows[e.RowIndex].Cells[$"{dataGridView.Name}_HWND"].Value = hwnd;
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
+        private void InitEventProcedure()
+        {
+            dgv_EventProcedure.Rows.Add(new object[] { "咸鱼之王", "", "WM_CLICK", "30", "340", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "咸鱼之王", "", "WM_CLICK", "140", "670", "200" });
+
+            dgv_EventProcedure.Rows.Add(new object[] { "新誓记", "", "WM_CLICK", "1020", "230", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "新誓记", "", "WM_CLICK", "460", "530", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "新誓记", "", "WM_CLICK", "710", "475", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "新誓记", "", "WM_CLICK", "1020", "230", "200" });
+
+            dgv_EventProcedure.Rows.Add(new object[] { "一战称王", "", "WM_CLICK", "990", "225", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "一战称王", "", "WM_CLICK", "400", "515", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "一战称王", "", "WM_CLICK", "675", "480", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "一战称王", "", "WM_CLICK", "990", "225", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "一战称王", "", "WM_CLICK", "855", "420", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "一战称王", "", "WM_CLICK", "865", "255", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "一战称王", "", "WM_CLICK", "655", "515", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "一战称王", "", "WM_CLICK", "300", "160", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "一战称王", "", "WM_CLICK", "655", "515", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "一战称王", "", "WM_CLICK", "865", "110", "200" });
+
+            dgv_EventProcedure.Rows.Add(new object[] { "寒刃", "", "WM_CLICK", "1025", "215", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "寒刃", "", "WM_CLICK", "400", "515", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "寒刃", "", "WM_CLICK", "675", "475", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "寒刃", "", "WM_CLICK", "1025", "215", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "寒刃", "", "WM_CLICK", "855", "350", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "寒刃", "", "WM_CLICK", "860", "250", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "寒刃", "", "WM_CLICK", "655", "520", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "寒刃", "", "WM_CLICK", "280", "155", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "寒刃", "", "WM_CLICK", "655", "520", "200" });
+            dgv_EventProcedure.Rows.Add(new object[] { "寒刃", "", "WM_CLICK", "865", "110", "200" });
 
             dgv_EventProcedure.EndEdit();
         }
 
-        private void FormMain_Resize(object sender, EventArgs e)
+        private void EventProcedure_新建ToolStripButton_Click(object sender, EventArgs e)
         {
-            var app = appContainer.AppProcess;
-            if (app == null) { return; }
+            dgv_EventProcedure.Rows.Add();
+        }
 
-            var c = FromHandle(app.MainWindowHandle);
-            var f = c as Form;
-            if (f != null)
+        private void EventProcedure_复制ToolStripButton_Click(object sender, EventArgs e)
+        {
+            DataGridViewRow dataGridRow = dgv_EventProcedure.Rows[dgv_EventProcedure.Rows.AddCopy(dgv_EventProcedure.CurrentRow.Index)];
+            foreach (DataGridViewCell cell in dgv_EventProcedure.CurrentRow.Cells)
             {
-                Console.WriteLine(f.Parent == null);
+                dataGridRow.Cells[cell.ColumnIndex].Value = cell.Value;
             }
         }
 
-        private void FormMain_FormClosing(object sender, FormClosingEventArgs e)
+        private void EventProcedure_删除ToolStripButton_Click(object sender, EventArgs e)
         {
-            if (eventHookFactory != null)
+            dgv_EventProcedure.Rows.RemoveAt(dgv_EventProcedure.CurrentRow.Index);
+        }
+
+        #region 任务栏及消息通知
+
+        /// <summary>
+        /// 托盘图标
+        /// </summary>
+        private NotifyIcon Notify;
+
+        private static bool exitTag = false;
+
+        private void ShowNotifyTip(string tipText, string tipTitle = "提示", int timeout = 500, ToolTipIcon tipIcon = ToolTipIcon.Info)
+        {
+            Notify.ShowBalloonTip(timeout, tipTitle, tipText, tipIcon);
+        }
+
+        private void InitializeNotifyIcon()
+        {
+            Notify = new NotifyIcon()
             {
-                eventHookFactory.Dispose();
+                Text = "工具箱",
+                Visible = true,
+                Icon = new Icon(Path.Combine(Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName), "appIcon.ico"))
+            };
+
+            Notify.ContextMenu = new ContextMenu(new MenuItem[] {
+                new MenuItem("显示", (object sender, EventArgs e)=>
+                {
+                    ShowForm(0);
+                }),
+                new MenuItem("退出", (object sender, EventArgs e)=>
+                {
+                    exitTag = true;
+                    Close();
+                })
+            });
+
+            Notify.MouseClick += (object sender, MouseEventArgs e) =>
+            {
+                if (e.Button != MouseButtons.Right) { return; }
+            };
+
+            Notify.DoubleClick += (object sender, EventArgs e) =>
+            {
+                if (Visible) { return; }
+
+                if (WindowState == FormWindowState.Minimized)
+                {
+                    ShowInTaskbar = true;
+                    WindowState = FormWindowState.Maximized;
+
+                    ShowForm(1);
+                    Activate();
+                }
+            };
+        }
+
+        #endregion
+
+        #region 全局热键注册
+
+        /// <summary>
+        /// 注册全局热键（需要重写消息处理函数WndProc处理WM_HOTKEY = 0x0312消息）
+        /// </summary>
+        /// <param name="hWnd">处理热键消息的窗体句柄</param>
+        /// <param name="id">热键标识符：应用程序范围0X0000-0xBFFF，共享的动态链接库范围0xC000-0xFFFF，若在程序内注册同一ID值，则旧的热键被覆盖</param>
+        /// <param name="fsModifiers">组合键类型</param>
+        /// <param name="vk">热键按键的虚拟码</param>
+        /// <returns></returns>
+        [DllImport("user32.dll")]
+        public static extern bool RegisterHotKey(IntPtr hWnd, int id, KeyModifiers fsModifiers, Keys vk);
+
+        /// <summary>
+        /// 释放之前注册的全局热键
+        /// </summary>
+        /// <param name="hWnd">窗体句柄，同RegisterHotKey的hWnd</param>
+        /// <param name="id">热键标识符，同RegisterHotKey的id</param>
+        /// <returns></returns>
+        [DllImport("user32.dll")]
+        public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        public enum KeyModifiers //组合键枚举
+        {
+            None = 0,
+            Alt = 1,
+            Control = 2,
+            Shift = 4,
+            Windows = 8
+        }
+
+        private const int WM_HOTKEY = 0x0312;
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_HOTKEY)
+            {
+                switch (m.WParam.ToInt32())
+                {
+                    case 998:
+                        ShowForm(0.1, true);
+                        break;
+                    case 999:
+                        if (Visible)
+                        {
+                            HideForm();
+                        }
+                        else
+                        {
+                            ShowForm(0);
+                        }
+                        break;
+                    case 98:
+                        if (Opacity < 1)
+                        {
+                            Opacity += 0.01;
+                            textBox_Opacity.Text = (Opacity * 100).ToString();
+                        }
+                        break;
+                    case 99:
+                        if (Opacity > 0)
+                        {
+                            Opacity -= 0.1;
+                            textBox_Opacity.Text = (Opacity * 100).ToString();
+                        }
+                        break;
+                    case 100:
+                        HackMouseEvent();
+                        break;
+                    case 101:
+                    case 103:
+                        EmbedApplication();
+                        break;
+                    case 102:
+                    case 104:
+                        CancelEmbedApplication(out _);
+                        break;
+                    default:
+                        break;
+                }
+            }
+            base.WndProc(ref m);
+        }
+
+        #endregion
+
+        #region 获取应用程序句柄
+
+        [DllImport("User32.dll", EntryPoint = "SendMessage")]
+        public static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, StringBuilder lParam);
+
+        [DllImport("User32.dll", EntryPoint = "SendMessage")]
+        public static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
+
+        /// <summary>  
+        /// 通过全屏幕坐标获取控件句柄,不获取隐藏或禁止的窗口句柄
+        /// </summary>  
+        /// <param name="p">屏幕坐标</param>  
+        /// <returns>返回值为包含该点的窗口的句柄。如果包含指定点的窗口不存在，返回值为NULL。如果该点在静态文本控件之上，返回值是在该静态文本控件的下面的窗口的句柄。</returns>  
+        [DllImport("user32.dll")]
+        public static extern IntPtr WindowFromPoint(Point p);
+
+        /// <summary>
+        /// 通过相对父控件的坐标获取子控件句柄,可获取隐藏或禁止的窗口句柄
+        /// </summary>
+        /// <param name="hWndParent">父控件句柄</param>
+        /// <param name="p">相对父控件的坐标</param>
+        /// <returns>如果坐标在父控件以外返回NULL，如果坐标在父控件以内但坐标位置没有子控件则返回父控件本身句柄，如果坐标位置有子控件返回子控件的句柄</returns>
+        [DllImport("user32.dll")]
+        public static extern IntPtr ChildWindowFromPoint(IntPtr hWndParent, Point p);
+
+        /// <summary>
+        /// 将屏幕坐标转换为控件的相对坐标
+        /// </summary>
+        /// <param name="hWnd">控件句柄</param>
+        /// <param name="lpPoint">引用坐标参数：使用前用屏幕坐标赋值，转换成功则变成控件相对坐标</param>
+        /// <returns>是否成功</returns>
+        [DllImport("user32.dll")]
+        public static extern bool ScreenToClient(IntPtr hWnd, ref Point lpPoint);
+
+        /// <summary>
+        /// 获取窗口的父窗口句柄，如果是顶层窗口返回0
+        /// </summary>
+        /// <param name="hwnd">窗口句柄</param>
+        /// <returns>父窗口句柄</returns>
+        [DllImport("user32")]
+        public static extern IntPtr GetParent(IntPtr hwnd);
+
+        /// <summary>  
+        /// 得到此控件的类名  
+        /// </summary>  
+        /// <param name="hWnd"></param>  
+        /// <param name="classname">接收数据的要首先给出空间</param>  
+        /// <param name="nlndex">所要取得的最大字符数，如果设置为0 则什么都没有</param>  
+        /// <returns></returns>  
+        [DllImport("user32.dll", EntryPoint = "GetClassName")]
+        public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        /// <summary>
+        /// 获取控件的名称（标题）
+        /// </summary>
+        /// <param name="hwnd">控件句柄</param>
+        /// <param name="lpString">存储字符的对象</param>
+        /// <param name="nMaxCount">获取字符的最大长度</param>
+        /// <returns>返回字符字节长度（一个中文字符算2个）</returns>
+        [DllImport("user32.dll")]
+        public static extern int GetWindowText(IntPtr hwnd, StringBuilder lpString, int nMaxCount);
+
+        /// <summary>
+        /// 获取窗口的创建者（线程或进程）
+        /// </summary>
+        /// <param name="hWnd">窗口句柄</param>
+        /// <param name="lpdwProcessId">进程ID</param>
+        /// <returns>线程号</returns>
+        [DllImport("user32.dll")]
+        public static extern int GetWindowThreadProcessId(IntPtr hWnd, ref int lpdwProcessId);
+
+        /// <summary>
+        /// 获取窗体尺寸
+        /// </summary>
+        /// <param name="hWnd">窗口句柄</param>
+        /// <param name="lpRect">窗体尺寸结构体</param>
+        /// <returns></returns>
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool GetWindowRect(IntPtr hWnd, ref RECT lpRect);
+
+        /*
+
+        RECT rect = new RECT();
+        GetWindowRect(HackLastParentHwnd, ref rect);
+        int x = rect.Left;
+        int y = rect.Top;
+        int width = rect.Right - rect.Left; //窗口的宽度
+        int height = rect.Bottom - rect.Top; //窗口的高度 
+
+        */
+
+        /// <summary>
+        /// 窗体尺寸结构体
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT
+        {
+            public int Left; //最左坐标
+            public int Top; //最上坐标
+            public int Right; //最右坐标
+            public int Bottom; //最下坐标
+        }
+
+        #region SetWindowPos
+
+        /*
+
+        //声明:
+        SetWindowPos(
+            hWnd: HWND;            {窗口句柄}
+            hWndInsertAfter: HWND; {窗口的 Z 顺序}
+            X, Y: Integer;         {位置}
+            cx, cy: Integer;       {大小}
+            uFlags: UINT           {选项}
+        ): BOOL;
+
+        //hWndInsertAfter 参数可选值:
+        HWND_TOP       = 0;        {在前面}
+        HWND_BOTTOM    = 1;        {在后面}
+        HWND_TOPMOST   = HWND(-1); {在前面, 位于任何顶部窗口的前面}
+        HWND_NOTOPMOST = HWND(-2); {在前面, 位于其他顶部窗口的后面}
+
+        //uFlags 参数可选值:
+        const short SWP_NOSIZE         = 1;    {忽略 cx、cy, 保持大小}
+        const short SWP_NOMOVE         = 2;    {忽略 X、Y, 不改变位置}
+        const short SWP_NOZORDER       = 4;    {忽略 hWndInsertAfter, 保持 Z 顺序}
+        const short SWP_NOREDRAW       = 8;    {不重绘}
+        const int SWP_NOACTIVATE     = 0x0010;  {不激活}
+        const int SWP_FRAMECHANGED   = 0x0020;  {强制发送 WM_NCCALCSIZE 消息, 一般只是在改变大小时才发送此消息}
+        const int SWP_DRAWFRAME      = SWP_FRAMECHANGED; {画边框}
+        const int SWP_SHOWWINDOW     = 0x0040;  {显示窗口}
+        const int SWP_HIDEWINDOW     = 0x0080;  {隐藏窗口}
+        const int SWP_NOCOPYBITS     = 0x00100; {丢弃客户区}
+        const int SWP_NOOWNERZORDER  = 0x00200; {忽略 hWndInsertAfter, 不改变 Z 序列的所有者}
+        const int SWP_NOREPOSITION   = SWP_NOOWNERZORDER;{}
+        const int SWP_NOSENDCHANGING = 0x00400; {不发出 WM_WINDOWPOSCHANGING 消息}
+        const int SWP_DEFERERASE     = 0x002000;            {防止产生 WM_SYNCPAINT 消息}
+        const int SWP_ASYNCWINDOWPOS = 0x004000;            {若调用进程不拥有窗口, 系统会向拥有窗口的线程发出需求}
+
+        */
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, EntryPoint = "SetWindowPos")]
+        public static extern IntPtr SetWindowPos(IntPtr hWnd, int hWndInsertAfter, int x, int Y, int cx, int cy, int wFlags);
+
+        #endregion
+
+        //应用程序发送此消息来复制对应窗口的文本到缓冲区
+        public static int WM_GETTEXT = 0x0D;
+        //得到与一个窗口有关的文本的长度（不包含空字符）
+        public static int WM_GETTEXTLENGTH = 0x0E;
+
+        private bool HackIsRuning = false;
+        private IntPtr HackLastHwnd = IntPtr.Zero;
+        private IntPtr HackLastParentHwnd = IntPtr.Zero;
+        private string HackLastParentTitle = string.Empty;
+        private System.Threading.AutoResetEvent ResetEvent = new System.Threading.AutoResetEvent(true);
+
+        private void EmbedApplication()
+        {
+            if (IntPtr.Zero.Equals(HackLastParentHwnd))
+            {
+                return;
             }
 
-            CancelEmbedApplication();
+            if (Dic_HWNDTitlePairs.ContainsKey(HackLastParentTitle) || Dic_HWNDPairs.ContainsKey(HackLastParentHwnd))
+            {
+                return;
+            }
+
+            SetWindowPos(HackLastParentHwnd, 0, appContainer.Left, appContainer.Top, 0, 0, 1 | 4 | 8);
+
+            Dic_HWNDTitlePairs.Add(HackLastParentTitle, HackLastParentHwnd);
+            Dic_HWNDPairs.Add(HackLastParentHwnd, new IntPtr(SetParent(HackLastParentHwnd, appContainer.Handle)));
+            dgv_EventProcedure_WindowTitle.Items.Add(HackLastParentTitle);
+
+            foreach (DataGridViewRow dataRow in dgv_EventProcedure.Rows)
+            {
+                var cell = dataRow.Cells[$"{dgv_EventProcedure.Name}_HWND"];
+                if (HackLastParentTitle.Equals(cell.Value))
+                {
+                    cell.Value = HackLastParentHwnd;
+                    dataRow.Cells[$"{dgv_EventProcedure.Name}_WindowTitle"].Value = HackLastParentTitle;
+                }
+            }
         }
+
+        private void CancelEmbedApplication(out bool successful)
+        {
+            if (Dic_HWNDTitlePairs.Count is 0 || Dic_HWNDPairs.Count is 0)
+            {
+                successful = false;
+                return;
+            }
+
+            Dic_HWNDTitlePairs.TryGetValue(HackLastParentTitle, out IntPtr hwnd);
+            Dic_HWNDPairs.TryGetValue(hwnd, out IntPtr parenthwnd);
+            if (IntPtr.Zero.Equals(hwnd) || IntPtr.Zero.Equals(parenthwnd))
+            {
+                successful = false;
+                return;
+            }
+
+            for (int i = 0; i < dgv_EventProcedure.Rows.Count; i++)
+            {
+                DataGridViewRow row = dgv_EventProcedure.Rows[i];
+                var hwndCell = row.Cells[$"{dgv_EventProcedure.Name}_HWND"];
+                if (hwndCell.Value.Equals(hwnd))
+                {
+                    var titleCell = row.Cells[$"{dgv_EventProcedure.Name}_WindowTitle"];
+                    hwndCell.Value = titleCell.Value;
+                    titleCell.Value = string.Empty;
+                }
+            }
+
+            SetParent(hwnd, parenthwnd);
+
+            Dic_HWNDPairs.Remove(hwnd);
+            Dic_HWNDTitlePairs.Remove(HackLastParentTitle);
+            dgv_EventProcedure_WindowTitle.Items.Remove(HackLastParentTitle);
+
+            successful = true;
+        }
+
+        private void Bw_DoWork(object sender, DoWorkEventArgs e)
+        {
+            BackgroundWorker me = sender as BackgroundWorker;
+            while (HackIsRuning)
+            {
+                ResetEvent.WaitOne();
+                Point p = Cursor.Position;
+                IntPtr hwnd = WindowFromPoint(p);//获取当前坐标位置的控件句柄（不能获取Disabled未激活的控件）
+                ScreenToClient(hwnd, ref p);//将屏幕坐标转换为窗口客户区坐标
+                IntPtr curHwnd = ChildWindowFromPoint(hwnd, p);//从当前坐标查找子控件（可获取Disabled未激活的控件）.如果没有则返回自己,如果在控件客户区以外返回0
+                if (curHwnd == IntPtr.Zero)
+                {
+                    curHwnd = hwnd;
+                }
+
+                if (curHwnd != HackLastHwnd)
+                {
+                    me.ReportProgress(1, curHwnd);
+                }
+                else
+                {
+                    me.ReportProgress(2);
+                }
+
+                System.Threading.Thread.Sleep(200);
+            }
+
+            me.ReportProgress(100);//线程结束
+        }
+
+        private void Bw_ProgressChanged(object sender, ProgressChangedEventArgs e)
+        {
+            Text = $"坐标：X={Cursor.Position.X}, Y={Cursor.Position.Y}";
+            if (e.ProgressPercentage == 1)
+            {
+                HackLastHwnd = (IntPtr)e.UserState;
+                textBox_ControlHwnd.Text = HackLastHwnd.ToString(); // hwnd.ToString("X8")
+                StringBuilder sb = new StringBuilder(SendMessage(HackLastHwnd, WM_GETTEXTLENGTH, 0, 0));
+                SendMessage(HackLastHwnd, WM_GETTEXT, sb.Capacity, sb);
+                textBox_ControlText.Text = sb.ToString();
+
+                HackLastParentHwnd = GetParent(HackLastHwnd);
+                if (IntPtr.Zero.Equals(HackLastParentHwnd))
+                {
+                    textBox_ParentControlTitle.Text = "";
+                    textBox_ParentControlHandle.Text = "";
+                }
+                else
+                {
+                    textBox_ParentControlHandle.Text = HackLastParentHwnd.ToString();
+
+                    GetWindowText(HackLastParentHwnd, sb, sb.Capacity);
+                    HackLastParentTitle = textBox_ParentControlTitle.Text = sb.ToString();
+                }
+            }
+            else if (e.ProgressPercentage == 100)
+            {
+                btnRecord.Text = "开始捕捉(Alt+S)";//等线程处理结束后再切换状态，防止按键过快导致线程没能及时退出。
+            }
+
+            ResetEvent.Set();
+        }
+
+        #endregion
 
         #region 向窗口发送消息事件
-
-        private void 测试点击ToolStripButton_Click(object sender, EventArgs e)
-        {
-            SendTextMouseEvent();
-        }
-
-        private void SendTextMouseEvent()
-        {
-            int.TryParse(鼠标XToolStripTextBox.Text, out int mouseX);
-            int.TryParse(鼠标YToolStripTextBox.Text, out int mouseY);
-            SendMouseClick(EmbedHWND, mouseX, mouseY);
-        }
 
         #region SendMessage向窗口发送消息事件
 
@@ -122,6 +791,7 @@ namespace EmbeddedApp
         {
             SendMessage(hWnd, WM_CHAR, VK_ENTER, 0);
         }
+
         /// <summary>
         /// 发送键盘按键到窗口(或控件)
         /// </summary>
@@ -201,16 +871,6 @@ namespace EmbeddedApp
 
         #endregion
 
-        #region 向窗口发送关闭指令
-
-        public static void CloseWindow(IntPtr hwnd)
-        {
-            SendMessage(hwnd, WM_CLOSE, 0, 0);
-        }
-        const int WM_CLOSE = 0x0010;
-
-        #endregion
-
         #endregion
 
         #endregion
@@ -220,18 +880,16 @@ namespace EmbeddedApp
         [DllImport("user32.dll", SetLastError = true)]
         private static extern long SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
 
-        //[DllImport("user32.dll", EntryPoint = "SetWindowLongA", SetLastError = true, CallingConvention = CallingConvention.Cdecl)]
-        //private static extern long SetWindowLong(IntPtr hwnd, int nIndex, long dwNewLong);
-        [DllImport("user32", EntryPoint = "SetWindowLong", SetLastError = true)]
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong", SetLastError = true)]
         private static extern uint SetWindowLong(IntPtr hwnd, int nIndex, uint dwNewLong);
 
         private const int GWL_STYLE = -16;
         private const int WS_VISIBLE = 0x10000000;
 
-        private static IntPtr EmbedHWND = IntPtr.Zero;
-        private static IntPtr OriginalParentHWND = IntPtr.Zero;
+        private readonly Dictionary<IntPtr, IntPtr> Dic_HWNDPairs = new Dictionary<IntPtr, IntPtr>(4);
+        private readonly Dictionary<string, IntPtr> Dic_HWNDTitlePairs = new Dictionary<string, IntPtr>(4);
 
-        void InitAppContainer()
+        private void InitAppContainer()
         {
             appContainer.Name = "appBox";
             appContainer.Dock = DockStyle.Fill;
@@ -242,393 +900,111 @@ namespace EmbeddedApp
             splitContainer_Main.Panel2.Controls.Add(appContainer);
         }
 
-        void EmbedApplication()
+        private void EmbedApplication(ref int hwnd, out IntPtr embedHWND, out IntPtr parentHWND)
         {
-            OriginalParentHWND = new IntPtr(SetParent(EmbedHWND, appContainer.Handle));
+            embedHWND = new IntPtr(hwnd);
+            parentHWND = new IntPtr(SetParent(embedHWND, appContainer.Handle));
             //Win32API.SetWindowLong(new HandleRef(appContainer, EmbedHWND), GWL_STYLE, WS_VISIBLE);
         }
 
-        void CancelEmbedApplication()
+        private void CancelEmbedApplication()
         {
-            if (IntPtr.Zero.Equals(EmbedHWND)) { return; }
-            if (IntPtr.Zero.Equals(OriginalParentHWND)) { return; }
-            SetParent(EmbedHWND, OriginalParentHWND);
+            if (Dic_HWNDPairs.Count is 0) { return; }
+            foreach (KeyValuePair<IntPtr, IntPtr> pair in Dic_HWNDPairs)
+            {
+                SetParent(pair.Key, pair.Value);
+            }
+
+            Dic_HWNDPairs.Clear();
+            Dic_HWNDTitlePairs.Clear();
+            dgv_EventProcedure.Rows.Clear();
+            dgv_EventProcedure_WindowTitle.Items.Clear();
         }
 
-        private static Point[] MousePoints = new Point[0];
-        private void 模拟事件ToolStripButton_Click(object sender, EventArgs e)
+        private void SimulateMouseWithKeyboardInput()
         {
-            if (IntPtr.Zero.Equals(EmbedHWND)) { return; }
-            MousePoints = new Point[dgv_EventProcedure.Rows.Count];
-            for (int i = 0; i < dgv_EventProcedure.Rows.Count; i++)
+            foreach (KeyValuePair<IntPtr, Point[]> pair in Dic_MousePoints)
             {
-                DataGridViewRow row = dgv_EventProcedure.Rows[i];
-                int.TryParse(row.Cells[$"{dgv_EventProcedure.Name}_X"].Value.ToString(), out int mouseX);
-                int.TryParse(row.Cells[$"{dgv_EventProcedure.Name}_Y"].Value.ToString(), out int mouseY);
-                MousePoints[i] = new Point(mouseX, mouseY);
-            }
-            if (MousePoints.Length < 0) { return; }
-
-            if (sender is ToolStripButton button)
-            {
-                if (button.Checked)
+                foreach (Point point in pair.Value)
                 {
-                    isLoopStopPlay = true;
-                    button.Enabled = false;
+                    System.Threading.Thread.Sleep(200);
+                    SendMouseClick(pair.Key, point.X, point.Y);
                 }
-                else
+            }
+        }
+
+        private bool isOnPlayback = false;
+        private bool isOnRecurrentPlay = true;
+        private Dictionary<IntPtr, Point[]> Dic_MousePoints;
+
+        private void PlayBackMouseEvent()
+        {
+            if (isOnPlayback) { return; }
+            isOnPlayback = true;
+
+            if (!isOnRecurrentPlay)
+            {
+                isOnRecurrentPlay = true;
+                return;
+            }
+
+            if (Dic_HWNDPairs.Count is 0) { isOnPlayback = false; return; }
+            if (dgv_EventProcedure.Rows.Count is 0) { isOnPlayback = false; return; }
+
+            dgv_EventProcedure.EndEdit();
+            Dic_MousePoints = new Dictionary<IntPtr, Point[]>(Dic_HWNDPairs.Count);
+            foreach (IntPtr hwnd in Dic_HWNDPairs.Keys)
+            {
+                List<Point> mousePoints = new List<Point>();
+                for (int i = 0; i < dgv_EventProcedure.Rows.Count; i++)
                 {
-                    isLoopStopPlay = false;
-                    button.Checked = true;
-                    if (checkBox_LoopPlay.Checked)
+                    DataGridViewCellCollection cells = dgv_EventProcedure.Rows[i].Cells;
+                    if (hwnd.ToString().Equals(cells[$"{dgv_EventProcedure.Name}_Hwnd"].Value.ToString()))
                     {
-                        int.TryParse(textBox_WaitTime.Text, out int waitTime);
-                        if (waitTime > 0)
-                        {
-                            Timer timer = new Timer()
-                            {
-                                Interval = (int)TimeSpan.FromSeconds(waitTime).TotalMilliseconds,
-                            };
-                            timer.Tick += (timerObject, eventArgs) =>
-                            {
-                                if (isLoopStopPlay)
-                                {
-                                    (timerObject as Timer).Stop();
-                                    button.Enabled = true;
-                                    button.Checked = false;
-                                    return;
-                                }
-                                SimulateMouseWithKeyboardInput();
-                            };
-                            timer.Start();
-                            return;
-                        }
+                        int.TryParse(cells[$"{dgv_EventProcedure.Name}_X"].Value.ToString(), out int mouseX);
+                        int.TryParse(cells[$"{dgv_EventProcedure.Name}_Y"].Value.ToString(), out int mouseY);
+                        mousePoints.Add(new Point(mouseX, mouseY));
                     }
-                    SimulateMouseWithKeyboardInput();
-                    button.Enabled = true;
-                    button.Checked = false;
                 }
-            }
-        }
 
-        private static void SimulateMouseWithKeyboardInput()
-        {
-            foreach (Point point in MousePoints)
-            {
-                System.Threading.Thread.Sleep(1000);
-                SendMouseClick(EmbedHWND, point.X, point.Y);
+                if (mousePoints.Count is 0) { continue; }
+                Dic_MousePoints.Add(hwnd, mousePoints.ToArray());
             }
-        }
 
-        private void 句柄嵌入ToolStripTextBox_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            if (e.KeyChar != 13) { return; }
-            if (sender is ToolStripTextBox textBox)
+            if (Dic_MousePoints.Count < 0) { isOnPlayback = false; return; }
+
+            SimulateMouseWithKeyboardInput();
+            if (!checkBox_LoopPlay.Checked)
             {
-                if (string.IsNullOrWhiteSpace(textBox.Text)) { return; }
-                if (int.TryParse(textBox.Text, out int intPtr))
+                isOnPlayback = false;
+                return;
+            }
+
+            int.TryParse(textBox_WaitTime.Text, out int waitTime);
+            if (waitTime <= 0)
+            {
+                isOnPlayback = false;
+                return;
+            }
+
+            isOnRecurrentPlay = false;
+            Timer timer = new Timer()
+            {
+                Interval = (int)TimeSpan.FromSeconds(waitTime).TotalMilliseconds,
+            };
+            timer.Tick += (timerObject, eventArgs) =>
+            {
+                if (isOnRecurrentPlay)
                 {
-                    EmbedHWND = (IntPtr)intPtr;
-                    EmbedApplication();
+                    (timerObject as Timer).Stop();
+                    isOnPlayback = false;
+                    return;
                 }
-            }
-        }
-
-        private void 取消嵌入ToolStripButton_Click(object sender, EventArgs e)
-        {
-            CancelEmbedApplication();
+                SimulateMouseWithKeyboardInput();
+            };
+            timer.Start();
         }
 
         #endregion
-
-        #region 鼠标键盘监听
-
-        private readonly KeyMouseFactory eventHookFactory = new KeyMouseFactory(Hook.GlobalEvents());
-        private KeyboardWatcher keyboardWatcher;
-        private MouseWatcher mouseWatcher;
-        private List<MacroEvent> _macroEvents;
-
-        private bool isRecording = false;
-        private bool isLoopStopPlay = false;
-
-        private void InitKeyMouseHook()
-        {
-            keyboardWatcher = eventHookFactory.GetKeyboardWatcher();
-            keyboardWatcher.OnKeyboardInput += (s, e) =>
-            {
-                if (_macroEvents != null)
-                {
-                    _macroEvents.Add(e);
-                }
-
-                if (e.KeyMouseEventType == MacroEventType.KeyPress)
-                {
-                    var keyEvent = (KeyPressEventArgs)e.EventArgs;
-                    Log(string.Format("Key {0}\t\t{1}\n", keyEvent.KeyChar, e.KeyMouseEventType));
-                }
-                else
-                {
-                    var keyEvent = (KeyEventArgs)e.EventArgs;
-                    Log(string.Format("Key {0}\t\t{1}\n", keyEvent.KeyCode, e.KeyMouseEventType));
-                }
-            };
-
-            mouseWatcher = eventHookFactory.GetMouseWatcher();
-            mouseWatcher.OnMouseInput += (s, e) =>
-            {
-                if (_macroEvents != null)
-                {
-                    _macroEvents.Add(e);
-                }
-                switch (e.KeyMouseEventType)
-                {
-                    case MacroEventType.MouseMove:
-                        var mouseEvent = (MouseEventArgs)e.EventArgs;
-                        LogMouseLocation(mouseEvent.X, mouseEvent.Y);
-                        break;
-                    case MacroEventType.MouseWheel:
-                        mouseEvent = (MouseEventArgs)e.EventArgs;
-                        LogMouseWheel(mouseEvent.Delta);
-                        break;
-                    case MacroEventType.MouseClick:
-                    case MacroEventType.MouseDown:
-                    case MacroEventType.MouseUp:
-                        mouseEvent = (MouseEventArgs)e.EventArgs;
-                        Log(string.Format("Mouse {0}\t\t{1}\n", mouseEvent.Button, e.KeyMouseEventType));
-                        break;
-                    case MacroEventType.MouseDownExt:
-                        MouseEventExtArgs downExtEvent = (MouseEventExtArgs)e.EventArgs;
-                        if (downExtEvent.Button != MouseButtons.Right)
-                        {
-                            Log(string.Format("Mouse Down \t\t {0}\n", downExtEvent.Button));
-                            return;
-                        }
-                        Log(string.Format("Mouse Down \t\t {0} Suppressed\n", downExtEvent.Button));
-                        downExtEvent.Handled = true;
-                        break;
-                    case MacroEventType.MouseWheelExt:
-                        MouseEventExtArgs wheelEvent = (MouseEventExtArgs)e.EventArgs;
-                        labelWheel.Text = string.Format("Wheel={0:000}", wheelEvent.Delta);
-                        Log("Mouse Wheel Move Suppressed.\n");
-                        wheelEvent.Handled = true;
-                        break;
-                }
-            };
-        }
-
-        public void StartWatch(IKeyboardMouseEvents events = null)
-        {
-            _macroEvents = new List<MacroEvent>();
-            keyboardWatcher.Start(events);
-            mouseWatcher.Start(events);
-        }
-
-        public void StopWatch()
-        {
-            keyboardWatcher.Stop();
-            mouseWatcher.Stop();
-        }
-
-        private void OnPlayback(object sender, MacroEvent e)
-        {
-            switch (e.KeyMouseEventType)
-            {
-                case MacroEventType.MouseMove:
-                    var mouseEvent = (MouseEventArgs)e.EventArgs;
-                    LogMouseLocation(mouseEvent.X, mouseEvent.Y);
-                    break;
-                case MacroEventType.MouseWheel:
-                    mouseEvent = (MouseEventArgs)e.EventArgs;
-                    LogMouseWheel(mouseEvent.Delta);
-                    break;
-                case MacroEventType.MouseDown:
-                case MacroEventType.MouseUp:
-                    mouseEvent = (MouseEventArgs)e.EventArgs;
-                    Log(string.Format("Mouse {0}\t\t{1}\t\tSimulator\n", mouseEvent.Button, e.KeyMouseEventType));
-                    break;
-                case MacroEventType.MouseDownExt:
-                    MouseEventExtArgs downExtEvent = (MouseEventExtArgs)e.EventArgs;
-                    if (downExtEvent.Button != MouseButtons.Right)
-                    {
-                        Log(string.Format("Mouse Down \t {0}\t\t\tSimulator\n", downExtEvent.Button));
-                        return;
-                    }
-                    Log(string.Format("Mouse Down \t {0} Suppressed.\t\tSimulator\n", downExtEvent.Button));
-                    downExtEvent.Handled = true;
-                    break;
-                case MacroEventType.MouseWheelExt:
-                    MouseEventExtArgs wheelEvent = (MouseEventExtArgs)e.EventArgs;
-                    labelWheel.Text = string.Format("Wheel={0:000}", wheelEvent.Delta);
-                    Log("Mouse Wheel Move Suppressed.\t\tSimulator\n");
-                    wheelEvent.Handled = true;
-                    break;
-                case MacroEventType.MouseDragStarted:
-                    Log("MouseDragStarted\t\tSimulator\n");
-                    break;
-                case MacroEventType.MouseDragFinished:
-                    Log("MouseDragFinished\t\tSimulator\n");
-                    break;
-                case MacroEventType.MouseDoubleClick:
-                    mouseEvent = (MouseEventArgs)e.EventArgs;
-                    Log(string.Format("Mouse {0}\t\t{1}\t\tSimulator\n", mouseEvent.Button, e.KeyMouseEventType));
-                    break;
-                case MacroEventType.KeyPress:
-                    var keyEvent = (KeyPressEventArgs)e.EventArgs;
-                    Keys key = (Keys)Enum.Parse(typeof(Keys), ((int)Char.ToUpper(keyEvent.KeyChar)).ToString());
-                    Log(string.Format("Key {0}\t\t{1}\t\tSimulator\n", key, e.KeyMouseEventType));
-                    break;
-                case MacroEventType.KeyDown:
-                case MacroEventType.KeyUp:
-                    var kEvent = (KeyEventArgs)e.EventArgs;
-                    Log(string.Format("Key {0}\t\t{1}\t\tSimulator\n", kEvent.KeyCode, e.KeyMouseEventType));
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        private void Log(string text)
-        {
-            dgv_EventProcedure.Rows.Add(dgv_EventProcedure.Rows.Count + 1, text, string.Empty, string.Empty);
-        }
-
-        private void LogMouseWheel(int Delta)
-        {
-            labelWheel.Text = string.Format("Wheel={0:000}", Delta);
-        }
-
-        private void LogMouseLocation(int X, int Y)
-        {
-            labelMousePosition.Text = string.Format("x={0:0000}; y={1:0000}", X, Y);
-        }
-
-        private void LogMouseLocation(Point location)
-        {
-            labelMousePosition.Text = string.Format($"X={location.X}; Y={location.Y}");
-        }
-
-        private void Button_Record_Click(object sender, EventArgs e)
-        {
-            if (!isRecording)
-            {
-                if (radioApplication.Checked)
-                {
-                    StartWatch(Hook.AppEvents());
-                }
-                else if (radioGlobal.Checked)
-                {
-                    StartWatch(Hook.GlobalEvents());
-                }
-
-                isRecording = true;
-                btnRecord.Text = "Stop";
-            }
-            else
-            {
-                StopWatch();
-                isRecording = false;
-                btnRecord.Text = "Record";
-                if (_macroEvents != null && _macroEvents.Count > 0)
-                {
-                    btnPlayback.Enabled = true;
-                }
-            }
-        }
-
-        private void BtnPlayback_Click(object sender, EventArgs e)
-        {
-            if (_macroEvents.Count < 0) { return; }
-
-            if ("StopPlay".Equals(btnPlayback.Text))
-            {
-                isLoopStopPlay = true;
-            }
-            else
-            {
-                btnPlayback.Text = "StopPlay";
-
-                InputSimulator sim = new InputSimulator();
-                //sim.OnPlayback += OnPlayback;
-
-                if (checkBox_LoopPlay.Checked)
-                {
-                    int.TryParse(textBox_WaitTime.Text, out int waitTime);
-                    if (waitTime > 0)
-                    {
-                        System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer()
-                        {
-                            Interval = (int)TimeSpan.FromMinutes(1).TotalMilliseconds,
-                        };
-                        timer.Tick += (timerObject, eventArgs) =>
-                        {
-                            if (isLoopStopPlay)
-                            {
-                                (timerObject as System.Windows.Forms.Timer).Stop();
-                                btnPlayback.Text = "Playback";
-                                return;
-                            }
-                            sim.PlayBack(_macroEvents);
-                        };
-                        timer.Start();
-                        return;
-                    }
-                }
-                sim.PlayBack(_macroEvents);
-                btnPlayback.Text = "Playback";
-            }
-        }
-
-        private void Radio_CheckedChanged(object sender, EventArgs e)
-        {
-            if (sender is RadioButton radio)
-            {
-                if (radio.Name.Equals(radioNone.Name))
-                {
-                    if (radio.Checked)
-                    {
-                        StopWatch();
-                        isRecording = false;
-                        btnRecord.Text = "Record";
-                        if (_macroEvents != null && _macroEvents.Count > 0)
-                        {
-                            btnPlayback.Enabled = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        private void CheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            if (eventHookFactory.KeyboardMouseEvents == null) { return; }
-            if (sender is CheckBox check)
-            {
-                if (check.Name.Equals(checkBoxSupressMouse))
-                {
-                    mouseWatcher.SupressMouse(check.Checked, MacroEventType.MouseDown);
-                }
-                else if (check.Name.Equals(checkBoxSupressMouseWheel))
-                {
-                    mouseWatcher.SupressMouse(check.Checked, MacroEventType.MouseWheel);
-                }
-            }
-        }
-
-        #endregion
-
-        private void EventProcedure_新建ToolStripButton_Click(object sender, EventArgs e)
-        {
-            dgv_EventProcedure.Rows.Add();
-        }
-
-        private void EventProcedure_复制ToolStripButton_Click(object sender, EventArgs e)
-        {
-            dgv_EventProcedure.Rows.AddCopy(dgv_EventProcedure.CurrentRow.Index);
-        }
-
-        private void EventProcedure_删除ToolStripButton_Click(object sender, EventArgs e)
-        {
-            dgv_EventProcedure.Rows.RemoveAt(dgv_EventProcedure.CurrentRow.Index);
-        }
     }
 }

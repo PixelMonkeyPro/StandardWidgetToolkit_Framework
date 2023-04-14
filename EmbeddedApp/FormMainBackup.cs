@@ -555,7 +555,7 @@ namespace EmbeddedApp
                     int.TryParse(textBox_WaitTime.Text, out int waitTime);
                     if (waitTime > 0)
                     {
-                        System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer()
+                        Timer timer = new Timer()
                         {
                             Interval = (int)TimeSpan.FromMinutes(1).TotalMilliseconds,
                         };
@@ -563,7 +563,7 @@ namespace EmbeddedApp
                         {
                             if (isLoopStopPlay)
                             {
-                                (timerObject as System.Windows.Forms.Timer).Stop();
+                                (timerObject as Timer).Stop();
                                 btnPlayback.Text = "Playback";
                                 return;
                             }
